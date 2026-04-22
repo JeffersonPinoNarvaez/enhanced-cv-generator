@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import anthropic from '@/lib/anthropic';
+import { completeLLM, validateLlmEnv } from '@/lib/llm';
 import { parseModelJson } from '@/lib/cv-generator';
 import { JOB_ANALYSIS_PROMPT, ATS_CV_GENERATION_PROMPT } from '@/lib/prompts';
+import {
+  checkGlobalLimit,
+  checkIPLimit,
+  getClientIp,
+  incrementGlobalCount,
+} from '@/lib/rate-limit';
 import { CVData, JobOffer, GeneratedATSCV, OutputLanguage } from '@/types';
 
 export const runtime = 'nodejs';
@@ -25,6 +31,42 @@ function normalizeJobOffer(raw: Record<string, unknown>, jobOfferText: string): 
 }
 
 export async function POST(request: NextRequest) {
+  const ip = getClientIp(request);
+
+  try {
+    const global = await checkGlobalLimit();
+    if (!global.allowed) {
+      return NextResponse.json(
+        {
+          error: 'service_unavailable',
+          message: 'El demo ha alcanzado su límite mensual. Vuelve el próximo mes.',
+        },
+        { status: 503 }
+      );
+    }
+
+    const ipCheck = await checkIPLimit(ip);
+    if (!ipCheck.allowed) {
+      return NextResponse.json(
+        {
+          error: 'rate_limit_exceeded',
+          message: 'Has alcanzado el límite de 3 CVs por día. Vuelve mañana.',
+          reset: ipCheck.reset,
+        },
+        { status: 429 }
+      );
+    }
+  } catch (e) {
+    console.error('Límite / Redis (analyze):', e);
+    return NextResponse.json(
+      {
+        error: 'service_unavailable',
+        message: 'No se pudo comprobar los límites de uso. Inténtalo más tarde.',
+      },
+      { status: 503 }
+    );
+  }
+
   try {
     const body = await request.json();
     const { cvData, jobOfferText, outputLanguage } = body as {
@@ -37,58 +79,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    if (!process.env.ANTHROPIC_API_KEY) {
-      return NextResponse.json(
-        { error: 'Server is missing ANTHROPIC_API_KEY configuration.' },
-        { status: 500 }
-      );
+    const llmCheck = validateLlmEnv();
+    if (!llmCheck.ok) {
+      return NextResponse.json({ error: llmCheck.message }, { status: 500 });
     }
 
-    const jobAnalysisResponse = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
-      messages: [
-        {
-          role: 'user',
-          content: JOB_ANALYSIS_PROMPT(jobOfferText),
-        },
-      ],
-    });
-
-    const jobAnalysisContent = jobAnalysisResponse.content[0];
-    if (jobAnalysisContent.type !== 'text') {
-      throw new Error('Unexpected response from job analysis');
-    }
+    const jobAnalysisText = await completeLLM(JOB_ANALYSIS_PROMPT(jobOfferText), 2000);
 
     let jobOffer: JobOffer;
     try {
-      const parsed = parseModelJson<Record<string, unknown>>(jobAnalysisContent.text);
+      const parsed = parseModelJson<Record<string, unknown>>(jobAnalysisText);
       jobOffer = normalizeJobOffer(parsed, jobOfferText);
     } catch {
       throw new Error('Failed to parse job offer analysis');
     }
 
-    const cvGenerationResponse = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 6000,
-      messages: [
-        {
-          role: 'user',
-          content: ATS_CV_GENERATION_PROMPT(cvData, jobOffer, outputLanguage),
-        },
-      ],
-    });
-
-    const cvGenerationContent = cvGenerationResponse.content[0];
-    if (cvGenerationContent.type !== 'text') {
-      throw new Error('Unexpected response from CV generation');
-    }
+    const cvGenerationText = await completeLLM(
+      ATS_CV_GENERATION_PROMPT(cvData, jobOffer, outputLanguage),
+      6000
+    );
 
     let generatedCV: GeneratedATSCV;
     try {
-      generatedCV = parseModelJson<GeneratedATSCV>(cvGenerationContent.text);
+      generatedCV = parseModelJson<GeneratedATSCV>(cvGenerationText);
     } catch {
       throw new Error('Failed to parse generated CV');
+    }
+
+    try {
+      await incrementGlobalCount();
+    } catch (e) {
+      console.error('incrementGlobalCount:', e);
     }
 
     return NextResponse.json({ generatedCV, jobOffer });

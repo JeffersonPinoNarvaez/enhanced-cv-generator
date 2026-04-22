@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import anthropic from '@/lib/anthropic';
+import { completeLLM, validateLlmEnv } from '@/lib/llm';
 import { extractTextFromPDF } from '@/lib/pdf-extractor';
 import { CV_EXTRACTION_PROMPT } from '@/lib/prompts';
 import { parseModelJson } from '@/lib/cv-generator';
@@ -20,8 +20,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'File must be a PDF' }, { status: 400 });
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      return NextResponse.json({ error: 'File size must be less than 10MB' }, { status: 400 });
+    if (file.size > 5 * 1024 * 1024) {
+      return NextResponse.json({ error: 'El PDF no debe superar 5MB' }, { status: 400 });
     }
 
     const arrayBuffer = await file.arrayBuffer();
@@ -39,32 +39,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!process.env.ANTHROPIC_API_KEY) {
-      return NextResponse.json(
-        { error: 'Server is missing ANTHROPIC_API_KEY configuration.' },
-        { status: 500 }
-      );
+    const llmCheck = validateLlmEnv();
+    if (!llmCheck.ok) {
+      return NextResponse.json({ error: llmCheck.message }, { status: 500 });
     }
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4000,
-      messages: [
-        {
-          role: 'user',
-          content: CV_EXTRACTION_PROMPT(rawText),
-        },
-      ],
-    });
-
-    const content = response.content[0];
-    if (content.type !== 'text') {
-      throw new Error('Unexpected response type from Claude');
-    }
+    const text = await completeLLM(CV_EXTRACTION_PROMPT(rawText), 4000);
 
     let cvData: CVData;
     try {
-      cvData = parseModelJson<CVData>(content.text);
+      cvData = parseModelJson<CVData>(text);
       cvData.rawText = rawText;
     } catch {
       throw new Error('Failed to parse CV extraction response');
