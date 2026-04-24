@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { completeLLM, validateLlmEnv } from '@/lib/llm';
+import { completeLLM, LlmHttpError, validateLlmEnv } from '@/lib/llm';
 import { extractTextFromPDF } from '@/lib/pdf-extractor';
 import { CV_EXTRACTION_PROMPT } from '@/lib/prompts';
 import { parseModelJson } from '@/lib/cv-generator';
@@ -57,6 +57,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ cvData });
   } catch (error: unknown) {
     console.error('CV extraction error:', error);
+    if (error instanceof LlmHttpError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     const message = error instanceof Error ? error.message : 'Failed to process CV';
     return NextResponse.json({ error: message }, { status: 500 });
   }

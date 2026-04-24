@@ -5,11 +5,33 @@ import { redis } from '@/lib/redis';
 const GLOBAL_MONTHLY_KEY = 'cv_craft:monthly_count';
 const MONTHLY_CAP = 180;
 
-const ipRatelimit = new Ratelimit({
-  redis,
-  limiter: Ratelimit.slidingWindow(3, '24 h'),
-  prefix: 'cv_craft:ip',
-});
+const DEFAULT_IP_PER_DAY = 3;
+const MAX_IP_PER_DAY = 500;
+
+/** Máximo de POST /api/analyze permitidos por IP en ventana deslizante de 24 h (Upstash). */
+export function getDailyIpLimit(): number {
+  const raw = process.env.RATE_LIMIT_IP_PER_DAY;
+  if (raw == null || String(raw).trim() === '') return DEFAULT_IP_PER_DAY;
+  const n = Number.parseInt(String(raw).trim(), 10);
+  if (!Number.isFinite(n) || n < 1) return DEFAULT_IP_PER_DAY;
+  return Math.min(n, MAX_IP_PER_DAY);
+}
+
+let ipRatelimitInstance: Ratelimit | null = null;
+let ipRatelimitForLimit: number | null = null;
+
+function getIpRatelimit(): Ratelimit {
+  const limit = getDailyIpLimit();
+  if (!ipRatelimitInstance || ipRatelimitForLimit !== limit) {
+    ipRatelimitInstance = new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(limit, '24 h'),
+      prefix: 'cv_craft:ip',
+    });
+    ipRatelimitForLimit = limit;
+  }
+  return ipRatelimitInstance;
+}
 
 export function getClientIp(request: NextRequest): string {
   const xf = request.headers.get('x-forwarded-for');
@@ -30,13 +52,13 @@ function getSecondsUntilEndOfCalendarMonth(): number {
 }
 
 /**
- * Consumo del cupo por IP (3 generaciones / 24 h, ventana deslizante).
+ * Consumo del cupo por IP (RATE_LIMIT_IP_PER_DAY / 24 h, ventana deslizante).
  * Usar una vez por solicitud que debe contar (p. ej. en el handler de /api/analyze).
  */
 export async function checkIPLimit(
   ip: string
 ): Promise<{ allowed: boolean; remaining: number; reset: number }> {
-  const result = await ipRatelimit.limit(ip);
+  const result = await getIpRatelimit().limit(ip);
   return {
     allowed: result.success,
     remaining: result.remaining,
@@ -48,7 +70,7 @@ export async function checkIPLimit(
  * Comprueba cuota restante sin consumir (para middleware antes del route handler).
  */
 export async function peekIPLimitRemaining(ip: string): Promise<{ remaining: number; reset: number }> {
-  return await ipRatelimit.getRemaining(ip);
+  return await getIpRatelimit().getRemaining(ip);
 }
 
 export async function checkGlobalLimit(): Promise<{ allowed: boolean; count: number }> {

@@ -2,16 +2,16 @@
 
 import { Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { OutputLanguage } from '@/types';
+import type { UILocale } from '@/lib/format-api-error';
 
 interface DownloadButtonProps {
   onClick: () => void | Promise<void>;
-  outputLanguage: OutputLanguage;
+  uiLocale: UILocale;
   disabled?: boolean;
 }
 
-export function DownloadButton({ onClick, outputLanguage, disabled }: DownloadButtonProps) {
-  const es = outputLanguage === 'es';
+export function DownloadButton({ onClick, uiLocale, disabled }: DownloadButtonProps) {
+  const es = uiLocale === 'es';
 
   return (
     <Button onClick={onClick} disabled={disabled} className="bg-blue-600 hover:bg-blue-700">

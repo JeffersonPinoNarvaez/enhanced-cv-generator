@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCertificationLine } from '@/lib/generated-cv-sanitize';
 import { GeneratedATSCV } from '@/types';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle2, TrendingUp } from 'lucide-react';
@@ -47,6 +48,9 @@ export function ResultPreview({ generatedCV: cv }: ResultPreviewProps) {
       <div className="p-8 max-w-3xl mx-auto font-mono text-sm">
         <div className="mb-6 text-center border-b-2 border-gray-800 pb-4">
           <h1 className="text-2xl font-bold uppercase tracking-wide">{cv.personalInfo.fullName}</h1>
+          {cv.profileHeadline && (
+            <p className="text-sm font-semibold text-gray-800 mt-2 tracking-tight normal-case">{cv.profileHeadline}</p>
+          )}
           <div className="text-gray-600 mt-2 space-y-1">
             <p>{[cv.personalInfo.email, cv.personalInfo.phone, cv.personalInfo.location].filter(Boolean).join(' | ')}</p>
             {[cv.personalInfo.linkedin, cv.personalInfo.portfolio, cv.personalInfo.github].filter(Boolean).length >
@@ -156,9 +160,7 @@ export function ResultPreview({ generatedCV: cv }: ResultPreviewProps) {
               {cv.certifications.map((cert, i) => (
                 <li key={i} className="flex gap-2 text-gray-600">
                   <span>•</span>
-                  <span>
-                    {cert.name} – {cert.issuer} ({cert.date})
-                  </span>
+                  <span>{formatCertificationLine(cert)}</span>
                 </li>
               ))}
             </ul>

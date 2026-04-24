@@ -9,6 +9,12 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['var(--font-poppins)', 'system-ui', 'sans-serif'],
+      },
+      fontSize: {
+        base: ['1.0625rem', { lineHeight: '1.65' }],
+      },
       colors: {
         background: 'var(--background)',
         foreground: 'var(--foreground)',

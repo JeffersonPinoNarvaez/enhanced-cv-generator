@@ -2,14 +2,17 @@
 
 import { useCallback, useState } from 'react';
 import { Upload, FileText, CheckCircle } from 'lucide-react';
+import type { UILocale } from '@/lib/format-api-error';
 
 interface CVUploaderProps {
   onFileSelect: (file: File) => void;
   selectedFile: File | null;
   disabled?: boolean;
+  uiLocale: UILocale;
 }
 
-export function CVUploader({ onFileSelect, selectedFile, disabled }: CVUploaderProps) {
+export function CVUploader({ onFileSelect, selectedFile, disabled, uiLocale }: CVUploaderProps) {
+  const es = uiLocale === 'es';
   const [isDragging, setIsDragging] = useState(false);
 
   const handleDrop = useCallback(
@@ -61,17 +64,21 @@ export function CVUploader({ onFileSelect, selectedFile, disabled }: CVUploaderP
           <CheckCircle className="w-10 h-10 text-green-500" />
           <div className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-green-600" />
-            <span className="text-sm font-medium text-green-700">{selectedFile.name}</span>
+            <span className="text-base font-semibold text-green-700">{selectedFile.name}</span>
           </div>
-          <span className="text-xs text-gray-500">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</span>
+          <span className="text-sm text-gray-500">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</span>
         </div>
       ) : (
         <div className="flex flex-col items-center gap-3">
           <Upload className="w-10 h-10 text-gray-400" />
           <div>
-            <p className="text-sm font-medium text-gray-700">Drop your CV here or click to browse</p>
-            <p className="text-xs text-gray-500 mt-1">
-              PDF format only · Max 10MB · Any format (ATS, modern, scanned)
+            <p className="text-base font-semibold text-gray-700">
+              {es ? 'Arrastra tu CV aquí o haz clic para elegir' : 'Drop your CV here or click to browse'}
+            </p>
+            <p className="text-sm text-gray-500 mt-2">
+              {es
+                ? 'Solo PDF · Máx. 5 MB en este servidor · ATS, moderno o escaneado'
+                : 'PDF only · Max 5 MB on this server · ATS, modern, or scanned'}
             </p>
           </div>
         </div>

@@ -71,10 +71,16 @@ export interface JobOffer {
   seniorityLevel?: string;
   jobFunction?: string;
   detectedLanguage?: string;
+  /** Cómo narrar el CV hacia este rol cuando el perfil no coincide 1:1 (p. ej. técnico → comercial). */
+  cvTailoringDirective?: string;
+  /** true si el rol dominante de la oferta difiere fuerte del historial principal del candidato. */
+  domainMismatch?: boolean;
 }
 
 export interface GeneratedATSCV {
   personalInfo: CVData['personalInfo'];
+  /** Una línea bajo el nombre, vocabulario de la oferta + perfil real (ej. ventas B2B | ingeniero). */
+  profileHeadline?: string;
   summary: string;
   workExperience: WorkExperience[];
   education: Education[];
@@ -88,6 +94,8 @@ export interface GeneratedATSCV {
 
 export type OutputLanguage = 'es' | 'en';
 
+export type AppErrorDisplay = { title: string; description: string };
+
 export interface AppState {
   step: 'input' | 'uploading' | 'processing' | 'result';
   jobOffer: string;
@@ -95,7 +103,7 @@ export interface AppState {
   cvFile: File | null;
   extractedCV: CVData | null;
   generatedCV: GeneratedATSCV | null;
-  error: string | null;
+  error: AppErrorDisplay | null;
   progress: number;
   progressMessage: string;
 }

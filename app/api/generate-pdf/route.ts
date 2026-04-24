@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { formatCertificationLine } from '@/lib/generated-cv-sanitize';
 import { GeneratedATSCV } from '@/types';
 
 export const runtime = 'nodejs';
@@ -101,24 +102,21 @@ async function generateATSPDF(cv: GeneratedATSCV): Promise<Uint8Array> {
     return lines.length;
   };
 
+  /** Section title only (no decorative lines — cleaner ATS PDF). */
   const drawSection = (title: string) => {
+    const titleSize = 11;
+
     y -= 10;
-    checkPageBreak(30);
-    page.drawLine({
-      start: { x: margin, y: y - 2 },
-      end: { x: pageWidth - margin, y: y - 2 },
-      thickness: 1.5,
-      color: accentColor,
-    });
-    y -= 4;
+    checkPageBreak(titleSize + 14);
+
     page.drawText(title.toUpperCase(), {
       x: margin,
       y,
-      size: 11,
+      size: titleSize,
       font: fontBold,
       color: accentColor,
     });
-    y -= 16;
+    y -= titleSize + 10;
   };
 
   const { personalInfo } = cv;
@@ -131,6 +129,11 @@ async function generateATSPDF(cv: GeneratedATSCV): Promise<Uint8Array> {
     color: black,
   });
   y -= 24;
+
+  if (cv.profileHeadline) {
+    drawText(cv.profileHeadline, { size: 10, color: darkGray, maxWidth: contentWidth });
+    y -= 6;
+  }
 
   const contactLine1Parts = [personalInfo.email, personalInfo.phone, personalInfo.location].filter(Boolean);
   drawText(contactLine1Parts.join('  |  '), { size: 9, color: darkGray });
@@ -154,15 +157,19 @@ async function generateATSPDF(cv: GeneratedATSCV): Promise<Uint8Array> {
     for (const job of cv.workExperience) {
       checkPageBreak(40);
       page.drawText(job.company, { x: margin, y, size: 11, font: fontBold, color: black });
-      const dateStr = `${job.startDate} – ${job.endDate}`;
-      const dateWidth = font.widthOfTextAtSize(dateStr, 9);
-      page.drawText(dateStr, {
-        x: pageWidth - margin - dateWidth,
-        y,
-        size: 9,
-        font,
-        color: medGray,
-      });
+      const dateStr = [job.startDate, job.endDate]
+        .filter((d) => d != null && String(d).trim() !== '' && String(d).toLowerCase() !== 'null')
+        .join(' – ');
+      if (dateStr) {
+        const dateWidth = font.widthOfTextAtSize(dateStr, 9);
+        page.drawText(dateStr, {
+          x: pageWidth - margin - dateWidth,
+          y,
+          size: 9,
+          font,
+          color: medGray,
+        });
+      }
       y -= 14;
 
       page.drawText(job.position, { x: margin, y, size: 10, font: fontBold, color: accentColor });
@@ -201,15 +208,19 @@ async function generateATSPDF(cv: GeneratedATSCV): Promise<Uint8Array> {
         font: fontBold,
         color: black,
       });
-      const dateStr = `${edu.startDate} – ${edu.endDate}`;
-      const dateWidth = font.widthOfTextAtSize(dateStr, 9);
-      page.drawText(dateStr, {
-        x: pageWidth - margin - dateWidth,
-        y,
-        size: 9,
-        font,
-        color: medGray,
-      });
+      const dateStr = [edu.startDate, edu.endDate]
+        .filter((d) => d != null && String(d).trim() !== '' && String(d).toLowerCase() !== 'null')
+        .join(' – ');
+      if (dateStr) {
+        const dateWidth = font.widthOfTextAtSize(dateStr, 9);
+        page.drawText(dateStr, {
+          x: pageWidth - margin - dateWidth,
+          y,
+          size: 9,
+          font,
+          color: medGray,
+        });
+      }
       y -= 14;
 
       page.drawText(edu.institution, { x: margin, y, size: 10, font, color: darkGray });
@@ -255,7 +266,7 @@ async function generateATSPDF(cv: GeneratedATSCV): Promise<Uint8Array> {
 
     for (const cert of cv.certifications) {
       checkPageBreak(20);
-      const certText = `${cert.name} – ${cert.issuer} (${cert.date})`;
+      const certText = formatCertificationLine(cert);
       page.drawText('•', { x: margin + 4, y, size: 10, font, color: darkGray });
       drawText(certText, { x: margin + 16, size: 10, color: darkGray, maxWidth: contentWidth - 16 });
       y -= 2;

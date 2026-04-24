@@ -1,22 +1,22 @@
 'use client';
 
 import { Textarea } from '@/components/ui/textarea';
-import { OutputLanguage } from '@/types';
+import type { UILocale } from '@/lib/format-api-error';
 
 interface JobOfferInputProps {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
-  outputLanguage: OutputLanguage;
+  uiLocale: UILocale;
 }
 
 export function JobOfferInput({
   value,
   onChange,
   disabled,
-  outputLanguage,
+  uiLocale,
 }: JobOfferInputProps) {
-  const es = outputLanguage === 'es';
+  const es = uiLocale === 'es';
 
   return (
     <>
@@ -24,12 +24,14 @@ export function JobOfferInput({
         placeholder={
           es ? 'Pega aquí la oferta laboral completa...' : 'Paste the complete job offer here...'
         }
-        className="min-h-[200px] resize-none font-mono text-sm"
+        className="min-h-[220px] resize-none font-mono text-[15px] leading-relaxed"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
       />
-      <p className="text-xs text-gray-400 mt-1">{value.length} characters</p>
+      <p className="text-sm text-gray-500 mt-2">
+        {value.length} {es ? 'caracteres' : 'characters'}
+      </p>
     </>
   );
 }

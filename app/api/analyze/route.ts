@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { completeLLM, validateLlmEnv } from '@/lib/llm';
+import { completeLLM, LlmHttpError, validateLlmEnv } from '@/lib/llm';
 import { parseModelJson } from '@/lib/cv-generator';
+import { sanitizeGeneratedATSCV } from '@/lib/generated-cv-sanitize';
 import { JOB_ANALYSIS_PROMPT, ATS_CV_GENERATION_PROMPT } from '@/lib/prompts';
 import {
   checkGlobalLimit,
   checkIPLimit,
   getClientIp,
+  getDailyIpLimit,
   incrementGlobalCount,
 } from '@/lib/rate-limit';
 import { CVData, JobOffer, GeneratedATSCV, OutputLanguage } from '@/types';
@@ -27,6 +29,16 @@ function normalizeJobOffer(raw: Record<string, unknown>, jobOfferText: string): 
     seniorityLevel: typeof raw.seniorityLevel === 'string' ? raw.seniorityLevel : undefined,
     jobFunction: typeof raw.jobFunction === 'string' ? raw.jobFunction : undefined,
     detectedLanguage: typeof raw.detectedLanguage === 'string' ? raw.detectedLanguage : undefined,
+    cvTailoringDirective:
+      typeof raw.cvTailoringDirective === 'string' ? raw.cvTailoringDirective : undefined,
+    domainMismatch:
+      raw.domainMismatch === true ||
+      raw.domainMismatch === 'true' ||
+      (typeof raw.domainMismatch === 'string' && raw.domainMismatch.toLowerCase() === 'true')
+        ? true
+        : raw.domainMismatch === false
+          ? false
+          : undefined,
   };
 }
 
@@ -47,10 +59,11 @@ export async function POST(request: NextRequest) {
 
     const ipCheck = await checkIPLimit(ip);
     if (!ipCheck.allowed) {
+      const cap = getDailyIpLimit();
       return NextResponse.json(
         {
           error: 'rate_limit_exceeded',
-          message: 'Has alcanzado el límite de 3 CVs por día. Vuelve mañana.',
+          message: `Has alcanzado el límite de ${cap} CVs por día. Vuelve mañana.`,
           reset: ipCheck.reset,
         },
         { status: 429 }
@@ -101,7 +114,7 @@ export async function POST(request: NextRequest) {
 
     let generatedCV: GeneratedATSCV;
     try {
-      generatedCV = parseModelJson<GeneratedATSCV>(cvGenerationText);
+      generatedCV = sanitizeGeneratedATSCV(parseModelJson<GeneratedATSCV>(cvGenerationText));
     } catch {
       throw new Error('Failed to parse generated CV');
     }
@@ -115,6 +128,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ generatedCV, jobOffer });
   } catch (error: unknown) {
     console.error('Analysis error:', error);
+    if (error instanceof LlmHttpError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     const message = error instanceof Error ? error.message : 'Failed to analyze and generate CV';
     return NextResponse.json({ error: message }, { status: 500 });
   }

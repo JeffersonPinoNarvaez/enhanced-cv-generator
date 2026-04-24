@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getClientIp, peekIPLimitRemaining } from '@/lib/rate-limit';
+import { getClientIp, getDailyIpLimit, peekIPLimitRemaining } from '@/lib/rate-limit';
 
 export async function middleware(request: NextRequest) {
   if (request.method !== 'POST' || request.nextUrl.pathname !== '/api/analyze') {
@@ -12,10 +12,11 @@ export async function middleware(request: NextRequest) {
     const { remaining, reset } = await peekIPLimitRemaining(ip);
 
     if (remaining <= 0) {
+      const cap = getDailyIpLimit();
       return NextResponse.json(
         {
           error: 'rate_limit_exceeded',
-          message: 'Has alcanzado el límite de 3 CVs por día. Vuelve mañana.',
+          message: `Has alcanzado el límite de ${cap} CVs por día. Vuelve mañana.`,
           reset,
         },
         { status: 429 }
