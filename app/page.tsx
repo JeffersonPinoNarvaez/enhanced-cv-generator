@@ -15,8 +15,9 @@ import { FileText, Sparkles, Globe, AlertCircle, Info } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
 import { Toaster } from '@/components/ui/sonner';
-import { formatApiError } from '@/lib/format-api-error';
+import { formatApiError, formatNonJsonResponseError } from '@/lib/format-api-error';
 import type { UILocale } from '@/lib/format-api-error';
+import { parseApiJsonResponse } from '@/lib/parse-api-response';
 import { getUiCopy } from '@/lib/ui-copy';
 
 type ExtractSuccess = { cvData: CVData };
@@ -76,14 +77,30 @@ export default function Home() {
       formData.append('cv', state.cvFile);
 
       const extractRes = await fetch('/api/extract-cv', { method: 'POST', body: formData });
-      const extractJson = await extractRes.json();
+      const extractParsed = await parseApiJsonResponse(extractRes);
+
+      if (!extractParsed.json) {
+        updateState({
+          step: 'input',
+          error: formatNonJsonResponseError(
+            extractParsed.status,
+            extractParsed.contentType,
+            extractParsed.bodyPreview,
+            uiEs,
+            'extract'
+          ),
+          progress: 0,
+          progressMessage: '',
+        });
+        return;
+      }
 
       if (!extractRes.ok) {
         updateState({
           step: 'input',
           error: formatApiError(
             extractRes.status,
-            extractJson as { error?: string; message?: string },
+            extractParsed.json as { error?: string; message?: string },
             uiEs
           ),
           progress: 0,
@@ -92,7 +109,7 @@ export default function Home() {
         return;
       }
 
-      const cvData = (extractJson as ExtractSuccess).cvData;
+      const cvData = (extractParsed.json as ExtractSuccess).cvData;
       updateState({ extractedCV: cvData, progress: 45, progressMessage: t.progressAnalyzing });
 
       const analyzeRes = await fetch('/api/analyze', {
@@ -104,14 +121,30 @@ export default function Home() {
           outputLanguage: state.outputLanguage,
         }),
       });
-      const analyzeJson = await analyzeRes.json();
+      const analyzeParsed = await parseApiJsonResponse(analyzeRes);
+
+      if (!analyzeParsed.json) {
+        updateState({
+          step: 'input',
+          error: formatNonJsonResponseError(
+            analyzeParsed.status,
+            analyzeParsed.contentType,
+            analyzeParsed.bodyPreview,
+            uiEs,
+            'analyze'
+          ),
+          progress: 0,
+          progressMessage: '',
+        });
+        return;
+      }
 
       if (!analyzeRes.ok) {
         updateState({
           step: 'input',
           error: formatApiError(
             analyzeRes.status,
-            analyzeJson as { error?: string; message?: string },
+            analyzeParsed.json as { error?: string; message?: string },
             uiEs
           ),
           progress: 0,
@@ -120,7 +153,7 @@ export default function Home() {
         return;
       }
 
-      const generatedCV: GeneratedATSCV = analyzeJson.generatedCV;
+      const generatedCV: GeneratedATSCV = (analyzeParsed.json as { generatedCV: GeneratedATSCV }).generatedCV;
       updateState({ generatedCV, step: 'result', progress: 100, progressMessage: t.progressDone });
     } catch (err: unknown) {
       const desc =

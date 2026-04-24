@@ -6,6 +6,8 @@ import { parseModelJson } from '@/lib/cv-generator';
 import { CVData } from '@/types';
 
 export const runtime = 'nodejs';
+/** Vercel / serverless: allow PDF + LLM enough time (requires compatible plan). */
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,6 +26,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'El PDF no debe superar 5MB' }, { status: 400 });
     }
 
+    const llmCheck = validateLlmEnv();
+    if (!llmCheck.ok) {
+      return NextResponse.json({ error: llmCheck.message }, { status: 500 });
+    }
+
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
@@ -37,11 +44,6 @@ export async function POST(request: NextRequest) {
         },
         { status: 422 }
       );
-    }
-
-    const llmCheck = validateLlmEnv();
-    if (!llmCheck.ok) {
-      return NextResponse.json({ error: llmCheck.message }, { status: 500 });
     }
 
     const text = await completeLLM(CV_EXTRACTION_PROMPT(rawText), 4000);
