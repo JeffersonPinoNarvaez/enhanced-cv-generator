@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { completeLLM, LlmHttpError, validateLlmEnv } from '@/lib/llm';
-import { extractTextFromPDF } from '@/lib/pdf-extractor';
 import { CV_EXTRACTION_PROMPT } from '@/lib/prompts';
 import { parseModelJson } from '@/lib/cv-generator';
 import { CVData } from '@/types';
@@ -8,8 +7,34 @@ import { CVData } from '@/types';
 export const runtime = 'nodejs';
 /** Vercel / serverless: allow PDF + LLM enough time (requires compatible plan). */
 export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
+
+/**
+ * Defer loading pdf-extractor until inside the handler so a bad native/tesseract
+ * load does not break route module initialization (which yields Next HTML 500).
+ */
+async function runPdfTextExtraction(buffer: Buffer): Promise<string> {
+  const { extractTextFromPDF } = await import('@/lib/pdf-extractor');
+  return extractTextFromPDF(buffer);
+}
 
 export async function POST(request: NextRequest) {
+  try {
+    return await handleExtractPost(request);
+  } catch (error: unknown) {
+    console.error('extract-cv fatal (outer):', error);
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json(
+      {
+        error: 'extract_cv_failed',
+        message: `PDF extraction failed: ${message}`,
+      },
+      { status: 500 }
+    );
+  }
+}
+
+async function handleExtractPost(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get('cv') as File | null;
@@ -34,7 +59,7 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    const rawText = await extractTextFromPDF(buffer);
+    const rawText = await runPdfTextExtraction(buffer);
 
     if (!rawText || rawText.length < 100) {
       return NextResponse.json(
