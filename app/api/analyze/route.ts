@@ -13,6 +13,7 @@ import {
 import { CVData, JobOffer, GeneratedATSCV, OutputLanguage } from '@/types';
 
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 function normalizeJobOffer(raw: Record<string, unknown>, jobOfferText: string): JobOffer {
   const arr = (v: unknown): string[] => (Array.isArray(v) ? (v as string[]) : []);
