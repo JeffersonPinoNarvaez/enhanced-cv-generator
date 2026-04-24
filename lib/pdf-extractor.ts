@@ -4,6 +4,8 @@
  * before your route try/catch runs → Next returns HTML "500: Internal Server Error".
  */
 
+import { installPdfJsNodePolyfills } from '@/lib/pdfjs-node-polyfills';
+
 type TesseractModule = {
   recognize?: (image: Buffer, lang: string, opts: { logger?: () => void }) => Promise<{ data: { text: string } }>;
   default?: TesseractModule;
@@ -50,6 +52,8 @@ async function ocrPageRaster(page: any, pageNum: number): Promise<string> {
 }
 
 export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
+  await installPdfJsNodePolyfills();
+
   try {
     const { PDFParse } = await import('pdf-parse');
     const parser = new PDFParse({ data: buffer });
@@ -70,6 +74,8 @@ export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
 }
 
 async function extractTextWithPdfJs(buffer: Buffer): Promise<string> {
+  await installPdfJsNodePolyfills();
+
   try {
     const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
     const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
