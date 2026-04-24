@@ -1,12 +1,17 @@
-import { PDFParse } from 'pdf-parse';
-import Tesseract from 'tesseract.js';
+/**
+ * PDF text extraction without static imports of pdf-parse / tesseract / canvas.
+ * On Vercel, loading tesseract or canvas at module top level can crash the worker
+ * before your route try/catch runs → Next returns HTML "500: Internal Server Error".
+ */
+
+type TesseractModule = {
+  recognize?: (image: Buffer, lang: string, opts: { logger?: () => void }) => Promise<{ data: { text: string } }>;
+  default?: TesseractModule;
+};
 
 /**
- * Renders a PDF page to PNG and runs Tesseract. Uses dynamic import for `canvas`
- * because native `canvas` often fails on serverless (e.g. Vercel) — we must not
- * crash the whole extract pipeline when OCR-by-raster is unavailable.
+ * Renders a PDF page to PNG and runs Tesseract. All heavy deps are dynamic-imported.
  */
-/** pdf.js page proxy */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function ocrPageRaster(page: any, pageNum: number): Promise<string> {
   try {
@@ -24,20 +29,29 @@ async function ocrPageRaster(page: any, pageNum: number): Promise<string> {
       .promise;
 
     const imageData = canvas.toBuffer('image/png');
+
+    const tess = (await import('tesseract.js')) as unknown as TesseractModule;
+    const recognize = tess.recognize ?? tess.default?.recognize;
+    if (typeof recognize !== 'function') {
+      console.warn('[pdf-extractor] tesseract.recognize not available');
+      return '';
+    }
+
     const {
       data: { text },
-    } = await Tesseract.recognize(imageData, 'eng+spa', {
+    } = await recognize(imageData, 'eng+spa', {
       logger: () => {},
     });
     return text;
   } catch (err) {
-    console.warn(`[pdf-extractor] Raster OCR skipped for page ${pageNum} (canvas/serverless):`, err);
+    console.warn(`[pdf-extractor] Raster OCR skipped for page ${pageNum}:`, err);
     return '';
   }
 }
 
 export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   try {
+    const { PDFParse } = await import('pdf-parse');
     const parser = new PDFParse({ data: buffer });
     const data = await parser.getText();
     await parser.destroy();
