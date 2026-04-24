@@ -1,5 +1,42 @@
 export type UILocale = 'es' | 'en';
 
+/** When the server returned HTML or non-JSON (proxy error, crash page, wrong host, etc.). */
+export function formatNonJsonResponseError(
+  status: number,
+  contentType: string | null,
+  bodyPreview: string,
+  uiEs: boolean,
+  step: 'extract' | 'analyze'
+): { title: string; description: string } {
+  const stepHint =
+    step === 'extract'
+      ? uiEs
+        ? 'al leer y extraer tu PDF'
+        : 'while reading and extracting your PDF'
+      : uiEs
+        ? 'al analizar la oferta y generar el CV'
+        : 'while analyzing the job and generating your CV';
+
+  const techHint = uiEs
+    ? 'Suele pasar cuando la ruta /api no llega a Next (sitio estático mal desplegado), el servidor devuelve una página HTML de error (502/504), falta configuración (variables de entorno, Redis, tiempo máximo de función), o un proxy delante devuelve HTML en lugar del JSON de la API.'
+    : 'This usually means /api never reached your Next server (e.g. static export or wrong deploy), the platform returned an HTML error page (502/504), server config is missing (env vars, Redis, function timeout), or a proxy returned HTML instead of the API JSON.';
+
+  const preview =
+    bodyPreview.length > 0
+      ? uiEs
+        ? `Respuesta recibida (recorte): ${bodyPreview}`
+        : `Response preview: ${bodyPreview}`
+      : '';
+
+  return {
+    title: uiEs ? 'El servidor no devolvió JSON' : 'The server did not return JSON',
+    description: uiEs
+      ? `Ocurrió un problema ${stepHint}. HTTP ${status}${contentType ? ` · ${contentType}` : ''}. ${techHint}${preview ? ` ${preview}` : ''}`
+      : `Something went wrong ${stepHint}. HTTP ${status}${contentType ? ` · ${contentType}` : ''}. ${techHint}${preview ? ` ${preview}` : ''}`,
+  };
+}
+
+
 type ApiErrorBody = {
   error?: string;
   message?: string;

@@ -1,6 +1,40 @@
 import { PDFParse } from 'pdf-parse';
 import Tesseract from 'tesseract.js';
-import { createCanvas } from 'canvas';
+
+/**
+ * Renders a PDF page to PNG and runs Tesseract. Uses dynamic import for `canvas`
+ * because native `canvas` often fails on serverless (e.g. Vercel) — we must not
+ * crash the whole extract pipeline when OCR-by-raster is unavailable.
+ */
+/** pdf.js page proxy */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function ocrPageRaster(page: any, pageNum: number): Promise<string> {
+  try {
+    const { createCanvas } = await import('canvas');
+    const viewport = page.getViewport({ scale: 2.0 });
+    const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+    const context = canvas.getContext('2d');
+
+    await page
+      .render({
+        canvasContext: context as unknown as CanvasRenderingContext2D,
+        viewport,
+        canvas: canvas as unknown as HTMLCanvasElement,
+      })
+      .promise;
+
+    const imageData = canvas.toBuffer('image/png');
+    const {
+      data: { text },
+    } = await Tesseract.recognize(imageData, 'eng+spa', {
+      logger: () => {},
+    });
+    return text;
+  } catch (err) {
+    console.warn(`[pdf-extractor] Raster OCR skipped for page ${pageNum} (canvas/serverless):`, err);
+    return '';
+  }
+}
 
 export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   try {
@@ -13,15 +47,15 @@ export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
       return text;
     }
 
-    console.log('PDF appears to be image-based, attempting OCR...');
-    return await extractTextWithOCR(buffer);
+    console.log('PDF appears to be image-based, attempting extended extraction...');
+    return await extractTextWithPdfJs(buffer);
   } catch (error) {
-    console.error('PDF parsing error, falling back to OCR:', error);
-    return await extractTextWithOCR(buffer);
+    console.error('PDF parsing error, falling back to pdf.js path:', error);
+    return await extractTextWithPdfJs(buffer);
   }
 }
 
-async function extractTextWithOCR(buffer: Buffer): Promise<string> {
+async function extractTextWithPdfJs(buffer: Buffer): Promise<string> {
   try {
     const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
     const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
@@ -44,25 +78,10 @@ async function extractTextWithOCR(buffer: Buffer): Promise<string> {
       if (pageText.trim().length > 50) {
         fullText += pageText + '\n';
       } else {
-        const viewport = page.getViewport({ scale: 2.0 });
-        const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
-        const context = canvas.getContext('2d');
-
-        await page
-          .render({
-            canvasContext: context as unknown as CanvasRenderingContext2D,
-            viewport,
-            canvas: canvas as unknown as HTMLCanvasElement,
-          })
-          .promise;
-
-        const imageData = canvas.toBuffer('image/png');
-        const {
-          data: { text },
-        } = await Tesseract.recognize(imageData, 'eng+spa', {
-          logger: () => {},
-        });
-        fullText += text + '\n';
+        const ocrText = await ocrPageRaster(page, pageNum);
+        if (ocrText.trim()) {
+          fullText += ocrText + '\n';
+        }
       }
     }
 
